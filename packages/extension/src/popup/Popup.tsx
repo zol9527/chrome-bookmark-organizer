@@ -1,89 +1,24 @@
-import { useEffect, useState } from 'react';
-import type { Plan } from '@cborg/shared';
+import { useState } from 'react';
+import type { PlanExecutionReport } from '@cborg/shared';
 import Button from './components/Button';
 import Card from './components/Card';
 import EmptyState from './components/EmptyState';
+import Icon from './components/Icon';
 import PlanCard from './components/PlanCard';
+import SkeletonLoader from './components/SkeletonLoader';
+import StatusPill from './components/StatusPill';
+import { useNmStatus } from './hooks/useNmStatus';
+import { usePendingPlans } from './hooks/usePendingPlans';
+import { useRpc } from './hooks/useRpc';
 
-/**
- * Popup 主界面（确认中心）：
- * 顶部标题 + NM host 状态条 + 待确认 plans 列表 + 底部快速操作。
- * 阶段 1 全部为 stub，阶段 2 接入 nm-client 的 RPC。
- */
 export default function Popup() {
-  const [nmConnected] = useState(false);
-  const [plans] = useState<Plan[]>([]);
-
-  useEffect(() => {
-    // TODO phase2: getNmStatus() / listPlans() 拉取真实状态，并订阅 plan:updated 事件
-  }, []);
-
-  return (
-    <div className="flex min-h-[420px] w-96 flex-col gap-3 bg-surface-light p-3 text-slate-900 dark:bg-surface-dark dark:text-slate-100">
-      {/* 顶部标题 */}
-      <header className="flex items-center justify-between">
-        <h1 className="text-base font-semibold">Bookmark Organizer</h1>
-      </header>
-
-      {/* NM host 连接状态条 */}
-      <div className="flex items-center gap-2 text-xs">
-        <span
-          className={
-            nmConnected
-              ? 'h-2 w-2 rounded-full bg-success-light dark:bg-success-dark'
-              : 'h-2 w-2 rounded-full bg-danger-light dark:bg-danger-dark'
-          }
-        />
-        <span className="text-slate-500 dark:text-slate-400">
-          {nmConnected ? 'Native host connected' : 'Native host disconnected'}
-        </span>
-        {/* TODO phase2: 显示 host 版本 / 重连按钮 */}
-      </div>
-
-      {/* 待确认 plans */}
-      <main className="flex-1">
-        {plans.length === 0 ? (
-          <Card>
-            <EmptyState
-              title="No pending plans"
-              description="Plans proposed by the AI agent will appear here for your confirmation."
-            />
-          </Card>
-        ) : (
-          <ul className="flex flex-col gap-2">
-            {plans.map((plan) => (
-              <li key={plan.id}>
-                <Card>
-                  <PlanCard
-                    plan={plan}
-                    onConfirm={(planId) => {
-                      // TODO phase2: confirmPlan(planId)
-                      void planId;
-                    }}
-                    onReject={(planId) => {
-                      // TODO phase2: rejectPlan(planId)
-                      void planId;
-                    }}
-                  />
-                </Card>
-              </li>
-            ))}
-          </ul>
-        )}
-      </main>
-
-      {/* 底部快速操作 */}
-      <footer className="border-t border-border-light pt-3 dark:border-border-dark">
-        <Button
-          className="w-full"
-          onClick={() => {
-            // TODO phase2: 触发一键迁移（legacy-migrator 来源 plan）
-            console.info('[cborg] one-click migrate (stub)');
-          }}
-        >
-          Run One-Click Migration
-        </Button>
-      </footer>
-    </div>
-  );
+  const { status, loading: statusLoading, setStatus } = useNmStatus();
+  const { plans, loading: plansLoading, setPlans } = usePendingPlans();
+  const { call, loading: rpcLoading, error, clearError } = useRpc();
+  const [report, setReport] = useState<PlanExecutionReport | null>(null);
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const confirmPlan = async (planId: string) => { clearError(); await call({ type: 'plan:confirm', planId }); const { report: execution } = await call({ type: 'plan:execute', planId }); setPlans((current) => current.filter((plan) => plan.id !== planId)); setReport(execution); };
+  const rejectPlan = async (planId: string) => { clearError(); await call({ type: 'plan:reject', planId }); setPlans((current) => current.filter((plan) => plan.id !== planId)); };
+  const reconnect = async () => { clearError(); setStatus(await call({ type: 'nm:reconnect' })); };
+  return <div className="flex h-[600px] w-[360px] flex-col overflow-hidden bg-slate-50 text-slate-900 dark:bg-[#161622] dark:text-slate-100"><header className="relative shrink-0 overflow-hidden border-b border-border-light bg-surface-light px-4 pb-3 pt-4 dark:border-border-dark dark:bg-surface-dark"><div className="pointer-events-none absolute -right-8 -top-10 h-28 w-28 rounded-full bg-primary-light/10 blur-2xl dark:bg-primary-dark/10" /><div className="relative flex items-center justify-between"><div><div className="flex items-center gap-2"><span className="grid h-7 w-7 place-items-center rounded-lg bg-primary-light text-white shadow-lg shadow-blue-500/25 dark:bg-primary-dark dark:text-slate-900"><Icon name="sparkle" className="h-4 w-4" /></span><h1 className="text-sm font-bold tracking-tight">Bookmark Organizer</h1></div><p className="mt-1 pl-9 text-[11px] text-slate-500 dark:text-slate-400">Review before anything changes.</p></div><a href="../options/options.html" target="_blank" aria-label="Open settings" className="grid h-8 w-8 place-items-center rounded-lg text-slate-500 transition hover:bg-slate-100 hover:text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-white"><Icon name="settings" className="h-4 w-4" /></a></div><div className="relative mt-3 flex items-center justify-between rounded-lg border border-border-light bg-slate-50/80 px-2.5 py-2 dark:border-border-dark dark:bg-slate-900/30"><span className="text-[11px] text-slate-500 dark:text-slate-400">Native Messaging</span><StatusPill status={status} loading={statusLoading} /></div></header><main className="min-h-0 flex-1 overflow-y-auto px-3 py-3"><div className="mb-2 flex items-center justify-between px-1"><h2 className="text-[11px] font-bold uppercase tracking-[0.14em] text-slate-500 dark:text-slate-400">Pending proposals</h2><span className="text-[11px] text-slate-400">{plans.length} awaiting review</span></div>{plansLoading ? <SkeletonLoader /> : plans.length === 0 ? <Card><EmptyState title="No pending plans" description="Ask your AI client to organize bookmarks. Its proposed changes will appear here for your approval." /></Card> : <ul className="space-y-2">{plans.map((plan) => <li key={plan.id}><Card><PlanCard plan={plan} busy={rpcLoading} onConfirm={confirmPlan} onReject={rejectPlan} /></Card></li>)}</ul>}{report ? <div className={`mt-3 rounded-xl border p-3 ${report.success ? 'border-green-200 bg-green-50 dark:border-green-900/60 dark:bg-green-950/30' : 'border-red-200 bg-red-50 dark:border-red-900/60 dark:bg-red-950/30'}`}><div className="flex items-center gap-2"><Icon name={report.success ? 'check' : 'close'} className={`h-4 w-4 ${report.success ? 'text-success-light dark:text-success-dark' : 'text-danger-light dark:text-danger-dark'}`} /><p className="text-xs font-semibold">{report.success ? 'Plan completed' : 'Plan needs attention'}</p></div><p className="mt-1 text-[11px] text-slate-600 dark:text-slate-300">{report.applied.length} changes applied{report.rejected.length ? ` · ${report.rejected.length} skipped` : ''}.</p></div> : null}{error ? <p role="alert" className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-[11px] text-danger-light dark:bg-red-950/40 dark:text-danger-dark">{error}</p> : null}</main><footer className="shrink-0 border-t border-border-light bg-surface-light px-3 py-3 dark:border-border-dark dark:bg-surface-dark"><Button className="w-full" disabled={rpcLoading} onClick={() => void call({ type: 'migrate:run-oneclick' })}><Icon name="sparkle" className="h-4 w-4" /> One-click migration</Button><button type="button" onClick={() => setAdvancedOpen((value) => !value)} aria-expanded={advancedOpen} className="mt-2 flex w-full cursor-pointer items-center justify-between rounded-lg px-2 py-1 text-[11px] text-slate-500 transition hover:bg-slate-100 hover:text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary-light dark:text-slate-400 dark:hover:bg-slate-800 dark:hover:text-slate-100"><span>Advanced</span><Icon name="chevron" className={`h-3.5 w-3.5 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} /></button>{advancedOpen ? <div className="mt-1 flex items-center justify-between rounded-lg bg-slate-50 px-2 py-2 dark:bg-slate-900/50"><span className="text-[11px] text-slate-500 dark:text-slate-400">{status?.hostVersion ? `Host v${status.hostVersion}` : 'Reconnect Native Host'}</span><Button size="sm" variant="secondary" disabled={rpcLoading} onClick={() => void reconnect()}><Icon name="refresh" className={`h-3.5 w-3.5 ${rpcLoading ? 'animate-spin' : ''}`} /> Reconnect</Button></div> : null}</footer></div>;
 }
