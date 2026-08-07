@@ -9,12 +9,12 @@ import { dispatchToExtension } from '../native/bridge.js';
  * schema 显式标注为共享契约类型（McpToolArgs[T]），保证 zod 校验输出与
  * @cborg/shared 的跨边界类型严格一致（编译期验证）。
  */
-type ToolDef<T extends McpToolName> = {
+export interface ToolDef<T extends McpToolName> {
   name: T;
   description: string;
   schema: z.ZodType<McpToolArgs[T]>;
   handler: (args: McpToolArgs[T]) => Promise<McpToolResult[T]>;
-};
+}
 
 /**
  * plan_propose 的 actions 元素（与 McpToolArgs['plan_propose'] 的 actions 项同构）。
@@ -32,14 +32,18 @@ const planActionSchema: z.ZodType<McpToolArgs['plan_propose']['actions'][number]
 });
 
 /**
- * 10 个 MCP tool 的注册表。
+ * 10 个 MCP tool 的注册表。handler 全部转发到 dispatchToExtension(tool, args)
+ * （真实路由由注入的 transport 决定：mock / phase 3 的真实 NM 桥）。
  *
  * 安全原则（写进每个 tool 的 description）：
  * - 所有读工具强调 read-only，绝不修改书签；
  * - 所有写操作收敛为 plan 系列，且 plan_execute 必须经扩展 popup 人工确认才落地；
  * - description 中绝不包含书签 title/url 等动态内容（防 prompt injection）。
+ *
+ * 导出（TOOL_REGISTRY / invokeTool / makeToolCallback）仅供测试与注册内部使用，
+ * 不作为公共 API 从 index.ts 转发。
  */
-const TOOLS: { [T in McpToolName]: ToolDef<T> } = {
+export const TOOL_REGISTRY: { [T in McpToolName]: ToolDef<T> } = {
   bookmark_get_tree: {
     name: 'bookmark_get_tree',
     description:
@@ -80,7 +84,7 @@ const TOOLS: { [T in McpToolName]: ToolDef<T> } = {
   bookmark_find_duplicates: {
     name: 'bookmark_find_duplicates',
     description:
-      'Read-only: detects duplicate bookmarks by URL. Returns groups for review; never moves or deletes anything.',
+      'Read-only: finds duplicate bookmarks by URL. With normalizeUrl: true, URLs are normalized (trailing slash, fragments, tracking params) before comparison. Returns groups for review; never moves or deletes anything.',
     schema: z.object({
       folderId: z.string().optional(),
       normalizeUrl: z.boolean().optional(),
@@ -119,7 +123,7 @@ const TOOLS: { [T in McpToolName]: ToolDef<T> } = {
   plan_execute: {
     name: 'plan_execute',
     description:
-      'Triggers a confirmation UI in the extension popup; user must approve before any change is applied. No bookmark change happens unless the user confirms.',
+      'Triggers confirmation UI in extension popup. User must approve before any change is applied. Returns the execution report.',
     schema: z.object({
       planId: z.string(),
     }),
@@ -139,10 +143,45 @@ const TOOLS: { [T in McpToolName]: ToolDef<T> } = {
 /** 运行时双保险：TOOLS 键集合必须与 shared 契约的 MCP_TOOLS 完全一致（防止契约漂移）。 */
 function assertToolRegistryComplete(): void {
   for (const name of MCP_TOOLS) {
-    if (!(name in TOOLS)) {
+    if (!(name in TOOL_REGISTRY)) {
       throw new Error(`tool registry drift: missing tool definition for '${name}'`);
     }
   }
+}
+
+/**
+ * 直接调用某 tool 的注册 handler（跳过 SDK 包装，供测试与 host 复用）。
+ * 错误原样向上传播（不做 isError 转换）。
+ */
+export async function invokeTool<T extends McpToolName>(
+  name: T,
+  args: McpToolArgs[T],
+): Promise<McpToolResult[T]> {
+  const def = TOOL_REGISTRY[name];
+  if (!def) {
+    throw new Error(`Unknown tool: ${name}`);
+  }
+  return def.handler(args);
+}
+
+/**
+ * 把注册的 handler 包装为 SDK 期望的 callback：
+ * 成功 → { content: [{ type: 'text', text: JSON(result) }] }；
+ * 失败 → { content: [错误消息], isError: true }（错误消息不含书签动态内容，
+ * 仅来自 transport 的 Error.message）。
+ */
+export function makeToolCallback<T extends McpToolName>(
+  def: ToolDef<T>,
+): (args: McpToolArgs[T]) => Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }> {
+  return async (args) => {
+    try {
+      const result = await def.handler(args);
+      return { content: [{ type: 'text', text: JSON.stringify(result) }] };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return { content: [{ type: 'text', text: message }], isError: true };
+    }
+  };
 }
 
 /**
@@ -160,20 +199,17 @@ export function registerTools(server: McpServer): void {
         description: def.description,
         inputSchema: def.schema,
       },
-      async (args) => {
-        const result = await def.handler(args);
-        return { content: [{ type: 'text', text: JSON.stringify(result) }] };
-      },
+      makeToolCallback(def),
     );
   };
-  register(TOOLS.bookmark_get_tree);
-  register(TOOLS.bookmark_list);
-  register(TOOLS.bookmark_search);
-  register(TOOLS.bookmark_count);
-  register(TOOLS.bookmark_find_duplicates);
-  register(TOOLS.plan_propose);
-  register(TOOLS.plan_get);
-  register(TOOLS.plan_cancel);
-  register(TOOLS.plan_execute);
-  register(TOOLS.plan_rollback);
+  register(TOOL_REGISTRY.bookmark_get_tree);
+  register(TOOL_REGISTRY.bookmark_list);
+  register(TOOL_REGISTRY.bookmark_search);
+  register(TOOL_REGISTRY.bookmark_count);
+  register(TOOL_REGISTRY.bookmark_find_duplicates);
+  register(TOOL_REGISTRY.plan_propose);
+  register(TOOL_REGISTRY.plan_get);
+  register(TOOL_REGISTRY.plan_cancel);
+  register(TOOL_REGISTRY.plan_execute);
+  register(TOOL_REGISTRY.plan_rollback);
 }
