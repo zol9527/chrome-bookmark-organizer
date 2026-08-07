@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Organize Chrome Bookmarks</title>
+    <style>
+      :root { color-scheme: light; }
+      body { width: 520px; margin: 0; padding: 16px; color: #202124; font: 14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
+      h1 { margin: 0 0 8px; font-size: 18px; }
+      p { line-height: 1.5; }
+      button { margin: 8px 8px 8px 0; padding: 8px 12px; border: 0; border-radius: 6px; background: #1a73e8; color: #fff; cursor: pointer; }
+      button:disabled { background: #9aa0a6; cursor: default; }
+      #execute { background: #188038; }
+      #repair { background: #a14200; }
+      #status { white-space: pre-wrap; max-height: 420px; overflow: auto; background: #f8f9fa; border-radius: 6px; padding: 10px; line-height: 1.45; }
+      .warning { color: #b06000; }
+    </style>
+  </head>
+  <body>
+    <h1>Chrome Bookmark Organizer</h1>
+    <p class="warning">First phase only moves folders and bookmarks. It does not delete bookmarks, change URLs, or rewrite bookmark titles. The Safari tree stays intact.</p>
+    <button id="analyze">Generate Preview</button>
+    <button id="execute" disabled>Execute First-Phase Migration</button>
+    <button id="repair">Repair Duplicate Target Folders</button>
+    <div id="status">Reading the current bookmark tree…</div>
+    <script src="popup.js"></script>
+  </body>
+</html>
