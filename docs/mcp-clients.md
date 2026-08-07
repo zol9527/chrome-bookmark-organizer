@@ -4,7 +4,7 @@
 
 ## 前置条件（所有客户端通用）
 
-1. 已 `pnpm build`，产物在 `packages/mcp-host/dist/cli/index.js`。
+1. 已 `pnpm build`，产物在 `packages/mcp-host/bin/mcp-host.js`。
 2. 已 `register` 并替换扩展 ID（`README.md` 快速开始第 2 步）。
 3. `@cborg/mcp-host` 是**私有 workspace 包，未发布到 npm**，因此配置里 `command` 用 `node`、`args` 指向本地构建产物的**绝对路径**，不能用 `npx cborg-mcp-host`。发布后可改用 `npx`。
 4. 三进程桥已接通（stdio MCP ↔ localhost TCP ↔ NM ↔ SW）：client 启动 serve 后即可调 tool，调用会经真实桥路由到扩展 SW。`--mock` 仍保留为纯演示模式（canned 数据，不接真实书签，`packages/mcp-host/src/cli/serve.ts:38-40`），联调期可用它确认客户端 ↔ 进程 A 链路，接真实书签则去掉 `--mock`。
@@ -16,10 +16,10 @@
 ```json
 {
   "mcpServers": {
-    "bookmark-organizer": {
+    "bookmarks": {
       "command": "node",
       "args": [
-        "/Users/<you>/dev/project/chrome-extensions/chrome-bookmark-organizer/packages/mcp-host/dist/cli/index.js"
+        "/Users/<you>/dev/project/chrome-extensions/chrome-bookmark-organizer/packages/mcp-host/bin/mcp-host.js"
       ]
     }
   }
@@ -37,11 +37,11 @@
 ```json
 {
   "mcpServers": {
-    "bookmark-organizer": {
+    "bookmarks": {
       "type": "stdio",
       "command": "node",
       "args": [
-        "/Users/<you>/dev/project/chrome-extensions/chrome-bookmark-organizer/packages/mcp-host/dist/cli/index.js"
+        "/Users/<you>/dev/project/chrome-extensions/chrome-bookmark-organizer/packages/mcp-host/bin/mcp-host.js"
       ]
     }
   }
@@ -50,7 +50,7 @@
 
 说明：Cursor 的 stdio 配置用 `type: "stdio"` + `command`/`args`；远程 Streamable HTTP 预留 `type: "http"` + `url`（本项目 HTTP transport 未实现，`packages/mcp-host/src/mcp/server.ts:15`）。
 
-**验证**：Cursor Settings → MCP 面板，应显示 `bookmark-organizer` 为 connected；展开可看到 10 个工具。
+**验证**：Cursor Settings → MCP 面板，应显示 `bookmarks` 为 connected；展开可看到 10 个工具。
 
 ## opencode
 
@@ -59,9 +59,9 @@
 ```json
 {
   "mcp": {
-    "bookmark-organizer": {
+    "bookmarks": {
       "type": "local",
-      "command": ["node", "/Users/<you>/dev/project/chrome-extensions/chrome-bookmark-organizer/packages/mcp-host/dist/cli/index.js"],
+      "command": ["node", "/Users/<you>/dev/project/chrome-extensions/chrome-bookmark-organizer/packages/mcp-host/bin/mcp-host.js"],
       "enabled": true
     }
   }
@@ -70,7 +70,7 @@
 
 说明：opencode 的 `type: "local"` 对应 stdio（`command` 是数组形式）；远程预留 `type: "remote"` + `url`。
 
-**验证**：启动 opencode，TUI 里输入 `/mcp` 查看 `bookmark-organizer` 状态；或问「你能访问我的书签吗」看工具调用。
+**验证**：启动 opencode，TUI 里输入 `/mcp` 查看 `bookmarks` 状态；或问「你能访问我的书签吗」看工具调用。
 
 ## Cline（VS Code）
 
@@ -79,11 +79,11 @@
 ```json
 {
   "cline.mcpServers": {
-    "bookmark-organizer": {
+    "bookmarks": {
       "type": "stdio",
       "command": "node",
       "args": [
-        "/Users/<you>/dev/project/chrome-extensions/chrome-bookmark-organizer/packages/mcp-host/dist/cli/index.js"
+        "/Users/<you>/dev/project/chrome-extensions/chrome-bookmark-organizer/packages/mcp-host/bin/mcp-host.js"
       ]
     }
   }
@@ -92,7 +92,15 @@
 
 说明：Cline 的 stdio 配置直接写 `command`/`args`，`type: "stdio"` 显式声明。
 
-**验证**：Cline 面板 → MCP Servers → 点刷新，`bookmark-organizer` 应显示绿色 connected；展开工具列表核对 10 个工具。
+**验证**：Cline 面板 → MCP Servers → 点刷新，`bookmarks` 应显示绿色 connected；展开工具列表核对 10 个工具。
+
+## 自定义目录映射
+
+代码内置的默认目录映射在 `packages/shared/src/constants.ts` 的 `DEFAULT_FOLDER_MAP` 与 `DEFAULT_TOP_LEVEL_FOLDERS`（迁移自原 `background.js` 的命名约定，如 `00_Inbox` / `10_Work_Projects` / `20_Development_Engineering` 等）。
+
+**这只是默认值**——你可以在扩展 options 页（点扩展图标 → 右上角设置图标 → "目录映射" tab）自由编辑：增删规则、改源中文名或目标英文目录、导入/导出 JSON。AI 提议的 plan 会基于你编辑后的映射，未命中的书签归入 `00_Inbox`。
+
+如果想用完全不同的目录结构（例如 `10_Projects` / `30_AI-Agents` / `40_Cybersecurity` 这类主题导向命名），不需要改代码，直接在 options 页改即可，持久化在 `chrome.storage.local`。
 
 ## 通用调试：手动模拟 MCP client
 
@@ -100,13 +108,13 @@ MCP stdio transport 是 **newline-delimited JSON-RPC**（每行一条消息）�
 
 ```bash
 # 1. 用 mock transport 启动（演示模式，不接真实书签）
-node packages/mcp-host/dist/cli/index.js --mock
+node packages/mcp-host/bin/mcp-host.js --mock
 
 # 2. 另一个终端：发送 initialize + tools/list
 printf '%s\n' \
   '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05","capabilities":{},"clientInfo":{"name":"debug","version":"0.1"}}}' \
   '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}' \
-  | node packages/mcp-host/dist/cli/index.js --mock
+  | node packages/mcp-host/bin/mcp-host.js --mock
 ```
 
 - 期望输出：`initialize` 返回 `MCP_SERVER_INFO`（`chrome-bookmark-organizer` v0.1.0，`packages/shared/src/constants.ts:10-13`），`tools/list` 返回 10 个 tool 的 name + description。
