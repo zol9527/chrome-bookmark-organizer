@@ -43,6 +43,7 @@
 
 - **allowed_origins 白名单绑定扩展 ID**：manifest 只允许 `chrome-extension://<32位扩展ID>/`，**Chrome 不支持通配符**（`src/cli/register.ts:50`；doctor 校验 ID 格式，`src/cli/doctor.ts:26`）。本机其他进程无法以你的扩展身份连 host。
 - **localhost-only**：全链路 stdio / localhost / NM，无公网端口；扩展不做任何网络请求。
+- **TCP wire 协议形状校验**：host-A ↔ host-B 的线协议逐帧运行时校验（`isWireMessage`，`src/bridge/tcp-protocol.ts:39`），单行上限 1MB 防恶意/损坏对端撑爆内存（`src/bridge/tcp-protocol.ts:82`）；TCP server 只监听 `127.0.0.1` 的动态端口（`src/bridge/tcp-server.ts:24,51`）。
 - **host stdout 纪律**：host 模式 stdout 只写 NM 帧，任何 `console.log` 都会破坏协议，调试输出必须走 stderr（`src/native/messaging.ts:126-128`）。
 - **超时与上限**：NM 请求 15s 超时（`src/background/nm-bridge.ts:35,114-116`）；单条消息上限 1MB，超限即协议错误退出（`src/native/messaging.ts:34-35,113-115`）。
 - **优雅降级**：host 未注册时 `connectNative` 失败只记状态广播 `nm:status`，不抛异常、不影响扩展其余功能（`src/background/nm-bridge.ts:80-94`）。
@@ -56,6 +57,8 @@
 
 ## 6. 残余风险与 TODO
 
-- 进程 A ↔ B 的真实桥接尚未实现（`TODO phase3`），当前 `serve --mock` 是演示模式，**不接真实书签**——生产使用前必须完成真实桥与端到端测试。
-- `chrome.bookmarks` 权限本身覆盖读写，无浏览器级细粒度拆分；上述防线全部在应用层实现。
-- 快照存 `storage.session`，浏览器关闭即清，跨会话回滚能力有限（设计取舍，见 [architecture.md](architecture.md) 第 5 节）。
+- **endpoint 文件权限**：endpoint 文件位于 `~/Library/Application Support/com.loyd.chrome_bookmark_organizer/endpoint`（macOS），内容仅 `{version, port, pid, startedAt}`，无明文敏感数据；代码未显式 `chmod`，默认权限取决于进程 umask（通常 644）。介意的话可自行 `chmod 600` 加固——注意 host-A 每次启动会重写该文件，加固需在启动后执行或加启动脚本。
+- **扩展 ID 依赖手动替换**：`register` 写入的 manifest `allowed_origins` 是 `EXTENSION_ID_PLACEHOLDER`，需用户手动替换为真实扩展 ID（doctor 会以 warn 提示，见 [development.md](development.md) 故障排查）。占位符状态下 Chrome 拒绝拉起 host-B。
+- **macOS 系统权限（TCC）**：进程读写 `~/Library/Application Support/` 与 NM 管道在部分 macOS 版本可能受 TCC 约束；属环境问题，非应用层可完全控制。
+- **`chrome.bookmarks` 权限本身覆盖读写**：无浏览器级细粒度拆分；上述防线全部在应用层实现（协议层无裸写工具 + UI 层强制确认 + 数据层快照回滚）。
+- **快照存 `storage.session`**：浏览器关闭即清，跨会话回滚能力有限（设计取舍，见 [architecture.md](architecture.md) 第 5 节）。

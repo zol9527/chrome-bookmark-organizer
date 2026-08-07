@@ -7,7 +7,7 @@
 1. 已 `pnpm build`，产物在 `packages/mcp-host/dist/cli/index.js`。
 2. 已 `register` 并替换扩展 ID（`README.md` 快速开始第 2 步）。
 3. `@cborg/mcp-host` 是**私有 workspace 包，未发布到 npm**，因此配置里 `command` 用 `node`、`args` 指向本地构建产物的**绝对路径**，不能用 `npx cborg-mcp-host`。发布后可改用 `npx`。
-4. 当前进程 A ↔ B 真实桥为 TODO；配置连接后调 tool 会得到 `No extension transport configured` 错误属预期。联调可先加 `--mock` 参数注入 in-memory transport（返回 canned 数据，`packages/mcp-host/src/cli/serve.ts:25`），确认客户端 ↔ 进程 A 链路通畅后再接真实书签。
+4. 三进程桥已接通（stdio MCP ↔ localhost TCP ↔ NM ↔ SW）：client 启动 serve 后即可调 tool，调用会经真实桥路由到扩展 SW。`--mock` 仍保留为纯演示模式（canned 数据，不接真实书签，`packages/mcp-host/src/cli/serve.ts:38-40`），联调期可用它确认客户端 ↔ 进程 A 链路，接真实书签则去掉 `--mock`。
 
 ## Claude Desktop
 
@@ -111,12 +111,12 @@ printf '%s\n' \
 
 - 期望输出：`initialize` 返回 `MCP_SERVER_INFO`（`chrome-bookmark-organizer` v0.1.0，`packages/shared/src/constants.ts:10-13`），`tools/list` 返回 10 个 tool 的 name + description。
 - 单条消息必须在一行内（stdout 被 MCP 协议占用，日志在 stderr，可加 `2>debug.log` 分开看）。
-- 若想进一步测 tool 调用（如 `bookmark_count`），追加一条 `tools/call` 消息即可；无 `--mock` 时会得到 `No extension transport configured` 错误（真实桥未实现，`packages/mcp-host/src/native/bridge.ts:42`）。
+- 若想进一步测 tool 调用（如 `bookmark_count`），追加一条 `tools/call` 消息即可。默认（真实桥）下，host-B 未连上扩展 SW 时会回 `EXTENSION_NOT_CONNECTED` 错误（`packages/mcp-host/src/bridge/tcp-transport.ts:123`）；只想验证进程 A 链路时可加 `--mock` 拿到 canned 结果。
 
 ## 排查清单
 
 | 现象 | 原因 | 处理 |
 | --- | --- | --- |
 | client 报「spawn ENOENT」 | args 路径写错或未 build | `pnpm build` 后核对绝对路径 |
-| 工具能列出，调用报 `No extension transport configured` | 真实桥未实现 | 联调用 `--mock`；生产等 phase 3 |
+| 工具能列出，调用报 `EXTENSION_NOT_CONNECTED` | host-B 未连上 host-A / SW 未连接 | 先起 `serve`；确认扩展已加载、manifest 的 allowed_origins 是真实扩展 ID（见 [development.md](development.md) 手动联调） |
 | NM 状态未连接 | host 未注册 / 扩展 ID 占位符 | `doctor` 诊断，见 [development.md](development.md) |
