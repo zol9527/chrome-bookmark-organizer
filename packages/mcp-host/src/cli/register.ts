@@ -31,21 +31,22 @@ export const PACKAGE_ROOT = fileURLToPath(new URL('../..', moduleFileUrl()));
 
 /**
  * 写入 manifest 的 host 启动命令。
- * 三进程方案（见 messaging.ts）下，Chrome 拉起的必须是 host-B 模式（`<bin> host`），
- * 由它回连 host-A 的 TCP 并桥接 NM。因此 manifest path 默认写成 `<bin 绝对路径> host`。
  *
- * ⚠️ Chrome 的 connectNative 会把 manifest 的 path 当可执行文件**原样 exec**、不拆分参数；
- * 若某浏览器不认含空格的路径，需要把 bin/mcp-host.js 换成纯路径的 host 启动器脚本，
- * 或 register 时用 --path 指向一个直接进入 host-B 模式的包装脚本。
- * doctor 自测走 spawn(argv) 传参，不受此限制。
+ * Chrome 的 connectNative 把 manifest 的 path 当**单一可执行文件**原样 spawn，**不拆参数**。
+ * 因此 path 必须是纯 bin 路径，不能写 `<bin> host`（Chrome 会把它当一个文件名找，找不到）。
+ *
+ * bin/mcp-host.js 在 cli/index.ts 顶部检测 `chrome-extension://<id>/` argv，自动进入
+ * host 子命令（host-B 模式）。NM host manifest 只需写纯 bin 路径。
+ *
+ * --path 选项保留为 escape hatch（指向自定义启动器脚本）。
  */
 export const DEFAULT_HOST_BIN = join(PACKAGE_ROOT, 'bin', 'mcp-host.js');
 
-/** host-B 子命令名（manifest path 的后缀）。 */
+/** host-B 子命令名（doctor 显式 spawn 测试用）。 */
 export const HOST_B_COMMAND = 'host';
 
-/** 默认写进 manifest 的 path 字段：`<bin 绝对路径> host`（明确 host-B 模式）。 */
-export const DEFAULT_HOST_PATH = `${DEFAULT_HOST_BIN} ${HOST_B_COMMAND}`;
+/** 默认写进 manifest 的 path 字段：纯 bin 路径（NM invocation 自动检测）。 */
+export const DEFAULT_HOST_PATH = DEFAULT_HOST_BIN;
 
 /** macOS 上某浏览器的 manifest 绝对路径。 */
 export function nmManifestPath(browserDir: string): string {
@@ -97,10 +98,10 @@ export function registerCommand(): Command {
         );
         if (!options.path) {
           console.warn(
-            'note: manifest path is "<bin> host" (host-B mode). Chrome execs manifest paths verbatim — if',
+            'note: manifest path is the plain host binary. bin/mcp-host.js auto-detects Native',
           );
           console.warn(
-            'connectNative fails with an executable-not-found error, use --path to point at a plain launcher script.',
+            'Messaging invocation (chrome-extension://... argv) and enters host-B mode automatically.',
           );
         }
       }

@@ -19,10 +19,15 @@ import { runNmBridgeHost } from '../bridge/nm-bridge-host.js';
  */
 export function hostCommand(): Command {
   return new Command('host')
+    .argument('[origin]', 'caller chrome-extension:// origin (passed automatically when spawned via Native Messaging)')
     .description(
       'Run as the Native Messaging bridge host (spawned by chrome.runtime.connectNative; bridges host-A TCP to the extension service worker over Native Messaging)',
     )
-    .action(async () => {
+    .allowExcessArguments(true)
+    .action(async (origin?: string) => {
+      if (origin) {
+        console.error(`cborg-mcp-host: invoked by ${origin}`);
+      }
       await runHostCommand();
     });
 }
