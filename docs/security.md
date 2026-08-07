@@ -57,7 +57,7 @@
 
 ## 6. 残余风险与 TODO
 
-- **endpoint 文件权限**：endpoint 文件位于 `~/Library/Application Support/com.loyd.chrome_bookmark_organizer/endpoint`（macOS），内容仅 `{version, port, pid, startedAt}`，无明文敏感数据；代码未显式 `chmod`，默认权限取决于进程 umask（通常 644）。介意的话可自行 `chmod 600` 加固——注意 host-A 每次启动会重写该文件，加固需在启动后执行或加启动脚本。
+- **endpoint 文件权限**：endpoint 文件位于 `~/Library/Application Support/com.loyd.chrome_bookmark_organizer/endpoint`（macOS），内容仅 `{version, port, pid, startedAt}`，无明文敏感数据；`writeEndpointFile` 写入后显式 `chmod 0o600`（owner-only，不受 umask 影响，见 `packages/mcp-host/src/bridge/endpoint-file.ts:63`）。父目录权限默认取决于 umask（通常 755，可接受）。
 - **扩展 ID 依赖手动替换**：`register` 写入的 manifest `allowed_origins` 是 `EXTENSION_ID_PLACEHOLDER`，需用户手动替换为真实扩展 ID（doctor 会以 warn 提示，见 [development.md](development.md) 故障排查）。占位符状态下 Chrome 拒绝拉起 host-B。
 - **macOS 系统权限（TCC）**：进程读写 `~/Library/Application Support/` 与 NM 管道在部分 macOS 版本可能受 TCC 约束；属环境问题，非应用层可完全控制。
 - **`chrome.bookmarks` 权限本身覆盖读写**：无浏览器级细粒度拆分；上述防线全部在应用层实现（协议层无裸写工具 + UI 层强制确认 + 数据层快照回滚）。

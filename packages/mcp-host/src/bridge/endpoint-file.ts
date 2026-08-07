@@ -1,6 +1,6 @@
 import { homedir } from 'node:os';
 import { dirname, join } from 'node:path';
-import { mkdir, readFile, rm, writeFile } from 'node:fs/promises';
+import { chmod, mkdir, readFile, rm, writeFile } from 'node:fs/promises';
 import { BridgeError } from './tcp-protocol.js';
 
 /**
@@ -58,6 +58,9 @@ export async function writeEndpointFile(options: {
   };
   await mkdir(dirname(path), { recursive: true });
   await writeFile(path, JSON.stringify(payload) + '\n', 'utf8');
+  // 显式收紧权限到 owner-only：endpoint 含 host-A 的 TCP 端口与 PID，
+  // 同机其他用户不应可读。writeFile 的 mode 受 umask 影响，故用显式 chmod 兜底。
+  await chmod(path, 0o600).catch(() => undefined);
   return path;
 }
 
