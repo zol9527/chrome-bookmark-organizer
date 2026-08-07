@@ -30,11 +30,22 @@ function moduleFileUrl(): string {
 export const PACKAGE_ROOT = fileURLToPath(new URL('../..', moduleFileUrl()));
 
 /**
- * 写入 manifest 的 host 二进制绝对路径。
- * TODO phase2：NM host 与 MCP serve 共用 stdin/stdout 冲突（见 messaging.ts 三进程方案），
- * 届时 manifest path 应指向专用 host 启动器（bin/nm-host.js 或 `mcp-host host`）。
+ * 写入 manifest 的 host 启动命令。
+ * 三进程方案（见 messaging.ts）下，Chrome 拉起的必须是 host-B 模式（`<bin> host`），
+ * 由它回连 host-A 的 TCP 并桥接 NM。因此 manifest path 默认写成 `<bin 绝对路径> host`。
+ *
+ * ⚠️ Chrome 的 connectNative 会把 manifest 的 path 当可执行文件**原样 exec**、不拆分参数；
+ * 若某浏览器不认含空格的路径，需要把 bin/mcp-host.js 换成纯路径的 host 启动器脚本，
+ * 或 register 时用 --path 指向一个直接进入 host-B 模式的包装脚本。
+ * doctor 自测走 spawn(argv) 传参，不受此限制。
  */
 export const DEFAULT_HOST_BIN = join(PACKAGE_ROOT, 'bin', 'mcp-host.js');
+
+/** host-B 子命令名（manifest path 的后缀）。 */
+export const HOST_B_COMMAND = 'host';
+
+/** 默认写进 manifest 的 path 字段：`<bin 绝对路径> host`（明确 host-B 模式）。 */
+export const DEFAULT_HOST_PATH = `${DEFAULT_HOST_BIN} ${HOST_B_COMMAND}`;
 
 /** macOS 上某浏览器的 manifest 绝对路径。 */
 export function nmManifestPath(browserDir: string): string {
@@ -59,9 +70,10 @@ export function registerCommand(): Command {
   return new Command('register')
     .description('Register the Native Messaging host manifest for Chrome-family browsers (macOS)')
     .option('--unregister', 'remove existing manifests instead of writing them')
-    .option('--path <path>', 'override the host binary path written into the manifest (absolute, or relative to cwd)')
+    .option('--path <path>', 'override the host binary path written into the manifest (absolute, or relative to cwd; used verbatim, no " host" suffix appended)')
     .action(async (options: { unregister?: boolean; path?: string }) => {
-      const hostBin = options.path ? join(process.cwd(), options.path) : DEFAULT_HOST_BIN;
+      // 默认写成 `<bin 绝对路径> host`（host-B 模式）；--path 由用户完全接管
+      const hostBin = options.path ? join(process.cwd(), options.path) : DEFAULT_HOST_PATH;
       let wrote = 0;
       for (const dir of NM_BROWSER_DIRS) {
         const target = nmManifestPath(dir);
@@ -83,6 +95,14 @@ export function registerCommand(): Command {
         console.warn(
           `\n${EXTENSION_ID_PLACEHOLDER}: replace with your real extension ID in each manifest's allowed_origins (chrome://extensions → "Copy ID").`,
         );
+        if (!options.path) {
+          console.warn(
+            'note: manifest path is "<bin> host" (host-B mode). Chrome execs manifest paths verbatim — if',
+          );
+          console.warn(
+            'connectNative fails with an executable-not-found error, use --path to point at a plain launcher script.',
+          );
+        }
       }
     });
 }
